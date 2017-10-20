@@ -1,0 +1,4 @@
+*.h5 binary
+*.nii binary
+*.nii.gz binary
+*.cvs binary
