@@ -14,8 +14,8 @@ K.set_image_dim_ordering('th')
 # For understanding the architecture itself, I recommend checking the following article
 # Dolz, J. et al. 3D fully convolutional networks for subcortical segmentation in MRI :
 # A large-scale study. Neuroimage, 2017.
-def generate_model(num_classes, input_size=(27, 27, 27), output_size=(9, 9, 9)) :
-    init_input = Input((1,) + input_size)
+def generate_model(num_classes, num_channel=1, input_size=(27, 27, 27), output_size=(9, 9, 9)) :
+    init_input = Input((num_channel,) + input_size)
 
     x = Conv3D(25, kernel_size=(3, 3, 3))(init_input)
     x = PReLU()(x)

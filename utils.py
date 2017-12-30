@@ -4,35 +4,27 @@ import itertools
 from keras.utils import np_utils
 from sklearn.feature_extraction.image import extract_patches as sk_extract_patches
 from matplotlib import pyplot as plt
+import bcolz
+import random
 
 precision_global = 'float32'
 
-# General utils for reading and saving data
-def get_filename(set_name, case_idx, input_name, loc='datasets') :
-    pattern = '{0}/{1}/{2}_{3}.nii.gz'
-    return pattern.format(loc, set_name, case_idx, input_name)
+# General utils for loading and saving data
+def read_data(case_idx, type_name, loc='datasets'):
+    file_name = '{0}/{1}/{2}.nii.gz'.format(loc, type_name, case_idx)
+    return nib.load(file_name).get_data()
 
-def get_set_name(case_idx) :
-    return 'training' if case_idx < 16 else 'testing'
+def save_data(data, case_idx, type_name, loc='results'):
+    file_name_ex = '{0}/{1}/{2}.nii.gz'.format('datasets', 'QSM', case_idx)
+    file_name = '{0}/{1}/{2}.nii.gz'.format(loc, type_name, case_idx)
+    nib.save(nib.Nifti1Image(data.astype('uint8'), None, nib.load(file_name_ex).header), file_name)
 
-def read_data(case_idx, input_name, loc='datasets') :
-    set_name = get_set_name(case_idx)
-
-    image_path = get_filename(set_name, case_idx, input_name, loc)
-
-    return nib.load(image_path)
-
-def read_vol(case_idx, input_name, loc='datasets') :
-    image_data = read_data(case_idx, input_name, loc)
-    return image_data.get_data()[:, :, :]
-
-def save_vol(segmentation, case_idx, loc='results') :
-    set_name = get_set_name(case_idx)
-    input_image_data = read_data(case_idx, 'QSM')
+def save_array(file_name, arr):
+    c = bcolz.carray(arr, rootdir=file_name, mode='w')
+    c.flush()
     
-    filename = get_filename(set_name, case_idx, 'label', loc)
-    #nib.save(nib.Nifti1Image(segmentation.astype('uint8'), input_image_data.affine, input_image_data.header), filename)
-    nib.save(nib.Nifti1Image(segmentation.astype('uint8'), None, input_image_data.header), filename)
+def load_array(file_name):
+    return bcolz.open(file_name)[:]
 
 
 # Data preparation utils
@@ -46,17 +38,24 @@ def extract_patches(volume, patch_shape, extraction_step) :
     npatches = np.prod(patches.shape[:ndim])
     return patches.reshape((npatches, ) + patch_shape)
 
-def build_set(QSM_vols, label_vols, extraction_step=(9, 9, 9), patch_shape=(27, 27, 27), predictor_shape=(9, 9, 9)) :
+def build_set(input_vols, label_vols, extraction_step=(9, 9, 9), patch_shape=(27, 27, 27), predictor_shape=(9, 9, 9), mask=None, num_dim_aux=0):
     #patch_shape = (27, 27, 27)
     #label_selector = [slice(None)] + [slice(9, 18) for i in range(3)]
     label_selector = [slice(None)] + [slice(int((patch_shape[i]-predictor_shape[i])/2), int((patch_shape[i]-predictor_shape[i])/2+predictor_shape[i])) for i in range(3)]
     
     num_classes = len(np.unique(label_vols))
+    num_channel = input_vols.shape[1]
 
     # Extract patches from input volumes and ground truth
-    x = np.zeros((0, 1) + patch_shape, dtype=precision_global)
+    x = np.zeros((0, num_channel) + patch_shape, dtype=precision_global)
     y = np.zeros((0, predictor_shape[0]*predictor_shape[1]*predictor_shape[2], num_classes), dtype=precision_global)
-    for idx in range(len(QSM_vols)) :
+    if type(mask) is not type(None):
+        x_add = np.zeros((0, num_channel) + patch_shape, dtype=precision_global)
+        y_add = np.zeros((0, predictor_shape[0]*predictor_shape[1]*predictor_shape[2], num_classes), dtype=precision_global)
+        
+    
+    for idx in range(len(input_vols)) :
+        #print(idx)
         y_length = len(y)
 
         label_patches = extract_patches(label_vols[idx], patch_shape, extraction_step)
@@ -65,94 +64,143 @@ def build_set(QSM_vols, label_vols, extraction_step=(9, 9, 9), patch_shape=(27, 
         # Select only those who are important for processing
         valid_idxs = np.where(np.sum(label_patches, axis=(1, 2, 3)) != 0)
         
-        # Filtering extracted patches
-        label_patches = label_patches[valid_idxs]
-
-        x = np.vstack((x, np.zeros((len(label_patches), 1) + patch_shape, dtype=precision_global)))
-        y = np.vstack((y, np.zeros((len(label_patches), predictor_shape[0]*predictor_shape[1]*predictor_shape[2], num_classes), dtype=precision_global)))
-
-        for i in range(len(label_patches)) :
-            y[i+y_length, :, :] = np_utils.to_categorical(label_patches[i, : ,: ,:], num_classes)
-
-        del label_patches
-
-        # Sampling strategy: reject samples which labels are only zeros
-        QSM_train = extract_patches(QSM_vols[idx], patch_shape, extraction_step)
-        x[y_length:, 0, :, :, :] = QSM_train[valid_idxs]
-        del QSM_train
-
-    return x, y
-
-def build_set_mask(QSM_vols, label_vols, extraction_step=(9, 9, 9), mask_vols=np.array([]), patch_shape=(27, 27, 27), predictor_shape=(9, 9, 9)) :
-    #patch_shape = (27, 27, 27)
-    #label_selector = [slice(None)] + [slice(9, 18) for i in range(3)]
-    label_selector = [slice(None)] + [slice(int((patch_shape[i]-predictor_shape[i])/2), int((patch_shape[i]-predictor_shape[i])/2+predictor_shape[i])) for i in range(3)]
-    
-    num_classes = len(np.unique(label_vols))
-
-    # Extract patches from input volumes and ground truth
-    x = np.zeros((0, 1) + patch_shape, dtype=precision_global)
-    y = np.zeros((0, predictor_shape[0]*predictor_shape[1]*predictor_shape[2], num_classes), dtype=precision_global)
-    for idx in range(len(QSM_vols)) :
-        y_length = len(y)
-
-        label_patches = extract_patches(label_vols[idx], patch_shape, extraction_step)
-        label_patches = label_patches[label_selector]
-                
-        # Select only those who are important for processing
-        valid_idxs = np.where(np.sum(label_patches, axis=(1, 2, 3)) != 0)
-        
-        if (0,) != mask_vols.shape:
-            mask_patches = extract_patches(mask_vols[idx], patch_shape, extraction_step)
+        # Enforce including patches covering mask
+        if type(mask) is not type(None):
+            mask_patches = extract_patches(mask[idx], patch_shape, extraction_step)
             mask_patches = mask_patches[label_selector]
-            valid_idxs = np.where((np.sum(label_patches, axis=(1, 2, 3)) != 0) | (np.sum(mask_patches, axis=(1, 2, 3)) != 0))
+            valid_idxs_mask = np.where((np.sum(mask_patches, axis=(1, 2, 3)) != 0))
+            valid_idxs_add = set2idx(idx2set(valid_idxs_mask) - idx2set(valid_idxs))
+            
+            y_add_length = len(y_add)
+            label_patches_add = label_patches[valid_idxs_add]
+            x_add = np.vstack((x_add, np.zeros((len(label_patches_add), num_channel) + patch_shape, dtype=precision_global)))
+            y_add = np.vstack((y_add, np.zeros((len(label_patches_add), predictor_shape[0]*predictor_shape[1]*predictor_shape[2], num_classes), dtype=precision_global)))     
+            for i in range(len(label_patches_add)) :
+                y_add[i+y_add_length, :, :] = np_utils.to_categorical(label_patches_add[i, : ,: ,:], num_classes).reshape((-1, num_classes))
+            del label_patches_add
+
+            # Sampling strategy: reject samples which labels are only zero
+            for i_channel in range(num_channel):
+                input_patches_add = extract_patches(input_vols[idx, i_channel], patch_shape, extraction_step)
+                x_add[y_add_length:, i_channel, :, :, :] = input_patches_add[valid_idxs_add]
+            del input_patches_add
         
         # Filtering extracted patches
         label_patches = label_patches[valid_idxs]
 
-        x = np.vstack((x, np.zeros((len(label_patches), 1) + patch_shape, dtype=precision_global)))
+        # Extend volume
+        x = np.vstack((x, np.zeros((len(label_patches), num_channel) + patch_shape, dtype=precision_global)))
         y = np.vstack((y, np.zeros((len(label_patches), predictor_shape[0]*predictor_shape[1]*predictor_shape[2], num_classes), dtype=precision_global)))
-
+        
         for i in range(len(label_patches)) :
-            y[i+y_length, :, :] = np_utils.to_categorical(label_patches[i, : ,: ,:], num_classes)
+            y[i+y_length, :, :] = np_utils.to_categorical(label_patches[i, : ,: ,:], num_classes).reshape((-1, num_classes))
 
         del label_patches
 
-        # Sampling strategy: reject samples which labels are only zeros
-        QSM_train = extract_patches(QSM_vols[idx], patch_shape, extraction_step)
-        x[y_length:, 0, :, :, :] = QSM_train[valid_idxs]
-        del QSM_train
+        # Sampling strategy: reject samples which labels are only zero
+        for i_channel in range(num_channel):
+            input_patches = extract_patches(input_vols[idx, i_channel], patch_shape, extraction_step)
+            x[y_length:, i_channel, :, :, :] = input_patches[valid_idxs]
+        del input_patches
 
-    return x, y
+    if type(mask) is not type(None):
+        x = np.concatenate((x, x_add))
+        y = np.concatenate((y, y_add))
+        
+    # Crop auxillary dimension
+    if num_dim_aux != 0:
+        x, aux = extract_aux(x, predictor_shape, num_dim_aux)
+        
+        return x, y, aux
+    else:
+        return x, y
+
+    
+def extract_aux(data, predictor_shape, num_dim_aux):
+    num_channel, *patch_shape = data.shape[1:]
+    aux_selector = [slice(None)] + [slice(num_channel-num_dim_aux, num_channel)] + [slice(int((patch_shape[i]-predictor_shape[i])/2), int((patch_shape[i]-predictor_shape[i])/2+predictor_shape[i])) for i in range(3)]
+    aux = data[aux_selector]
+    data = data[:,:num_channel-num_dim_aux,:,:,:]
+    
+    return data, aux
+    
+    
+    
+
+# Random shuffle (1st dim)
+def shuffle(data, idxs = None):
+    N = len(data)
+    
+    if idxs == None:
+        idxs = list(range(N))
+        for i in range(N-1, -1, -1):
+            j = random.randint(0, i)
+            idxs[i], idxs[j] = idxs[j], idxs[i]
+    
+    idxs_target = [0] * N
+    for i, idx in enumerate(idxs):
+        idxs_target[idx] = i
+    
+    for i in range(N):
+        while i != idxs_target[i]:
+            j = idxs_target[i]
+            data[i], data[j] = data[j], data[i]
+            idxs_target[i], idxs_target[j] = idxs_target[j], idxs_target[i]
+        
+    return idxs
+        
+# Normalize each patch (1st dim) in each channel (2nd dim)
+def norm_patch(data):
+    #mean_data = np.tile(np.mean(data, (2,3,4)).reshape(data.shape[:2]+(1,1,1)), (1,1,)+data.shape[2:])
+    #std_data = np.tile(np.std(data, (2,3,4)).reshape(data.shape[:2]+(1,1,1)), (1,1,)+data.shape[2:])
+    mean_data = np.mean(data, (2,3,4))
+    std_data = np.std(data, (2,3,4))
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            if std_data[i,j] != 0:
+                data[i,j,:,:,:] = (data[i,j,:,:,:] - mean_data[i,j])/std_data[i,j]
+    
+        
+    
+def idx2set(data_idx):
+    return set([ tuple(map(int, y)) for y in zip(*[ x for x in data_idx ]) ])
+    
+def set2idx(data_set):
+    return tuple( np.asarray(y) for y in zip(*[ x for x in data_set ]))
+    
 
 # Reconstruction utils
-def generate_indexes(patch_shape, expected_shape) :
+def generate_indexes(patch_shape, expected_shape, pad_shape) :
     ndims = len(patch_shape)
 
     #poss_shape = [patch_shape[i+1] * (expected_shape[i] // patch_shape[i+1]) for i in range(ndims-1)]
-    poss_shape = [patch_shape[i+1] * ((expected_shape[i]-18) // patch_shape[i+1]) + 18 for i in range(ndims-1)]
+    poss_shape = [patch_shape[i+1] * ((expected_shape[i]-pad_shape[i]*2) // patch_shape[i+1]) + pad_shape[i]*2 for i in range(ndims-1)]
 
     #idxs = [range(patch_shape[i+1], poss_shape[i] - patch_shape[i+1], patch_shape[i+1]) for i in range(ndims-1)]
-    idxs = [range(9, poss_shape[i] - 9, patch_shape[i+1]) for i in range(ndims-1)]
-
+    idxs = [range(pad_shape[i], poss_shape[i] - pad_shape[i], patch_shape[i+1]) for i in range(ndims-1)]
+    
     return itertools.product(*idxs)
 
-def reconstruct_volume(patches, expected_shape) :
+def reconstruct_volume(patches, expected_shape, pad_shape=(9, 9, 3)) :
     patch_shape = patches.shape
 
     assert len(patch_shape) - 1 == len(expected_shape)
 
     reconstructed_img = np.zeros(expected_shape, dtype=precision_global)
 
-    for count, coord in enumerate(generate_indexes(patch_shape, expected_shape)) :
+    for count, coord in enumerate(generate_indexes(patch_shape, expected_shape, pad_shape)) :
         selection = [slice(coord[i], coord[i] + patch_shape[i+1]) for i in range(len(coord))]
         reconstructed_img[selection] = patches[count]
 
     return reconstructed_img
 
 # Utils for plotting
-def plots(ims, figsize=(12,6), rows=1, interp=False, titles=None):
+def plots(ims, figsize=(12,6), rows=1, scale=None, interp=False, titles=None):
     
+    if scale != None:
+        lo, hi = scale
+        ims = (ims - lo)/(hi - lo) * 255
+        
     if(ims.ndim == 2):
         ims = np.tile(ims, (1,1,1));
     

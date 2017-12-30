@@ -2,3 +2,4 @@
 *.nii binary
 *.nii.gz binary
 *.cvs binary
+*.xlsx binary
