@@ -53,21 +53,6 @@ def generate_model(num_classes, num_channel=1, input_size=(27, 27, 9), output_si
     fc = BatchNormalization(axis=1)(fc)
     fc = Dropout(0.2)(fc)
     
-    #fc_loc = Conv3D(100, kernel_size=(1, 1, 1))(loc_input)
-    #fc_loc = PReLU()(fc_loc)
-    #fc_loc = BatchNormalization(axis=1)(fc_loc)
-    #fc_loc = Dropout(0.2)(fc_loc)
-    #fc_loc = Conv3D(50, kernel_size=(1, 1, 1))(fc_loc)
-    #fc_loc = PReLU()(fc_loc)
-    #fc_loc = BatchNormalization(axis=1)(fc_loc)
-    #fc_loc = Dropout(0.2)(fc_loc)
-    #fc_loc = Conv3D(30, kernel_size=(1, 1, 1))(fc_loc)
-    #fc_loc = PReLU()(fc_loc)
-    #fc_loc = BatchNormalization(axis=1)(fc_loc)
-    #fc_loc = Dropout(0.2)(fc_loc)    
-    
-    #fc_concat = concatenate([fc, fc_loc], axis=1)
-
     pred = Conv3D(num_classes, kernel_size=(1, 1, 1))(fc)
     pred = PReLU()(pred)
     pred = Reshape((num_classes, output_size[0]*output_size[1]*output_size[2]))(pred)
