@@ -6,7 +6,7 @@ This work is based on:
 
 ## Current outcome
 
-The work has been submitted to ISMRM Workshop on Machine Learning 2018
+Accepted by ISMRM Workshop on Machine Learning 2018.
 
 Some preliminary reports can be found at Medium ([Part 1](https://medium.com/@zheliu/deep-gray-matter-dgm-segmentation-using-neural-network-application-to-qsm-a0183cb3e3ae)) ([Part 2](https://medium.com/@zheliu/deep-gray-matter-dgm-segmentation-using-3d-convolutional-neural-network-application-to-qsm-part-83c247416389))
 
