@@ -16,8 +16,17 @@ Some preliminary reports can be found at Medium ([Part 1](https://medium.com/@zh
 
 Larger kernel size (7, 7, 3), add Batch Normalization and auxiliary feature input of spatial coordinates information.
 
-## How to use it
+* Update 2018-03-28:
+
+Add wrapper for segmentation (inference).
+
+## How to use it (for training)
 1. Put QSM images in **datasets/QSM/**
 2. Put spatial coordinates maps in **datasets/X/**, **datasets/Y/**, **datasets/Z/** 
 3. Put segmented ROI labels in **datasets/label/**
 4. Run **segDGM_3DCNN.ipynb**
+
+## How to use it (for segmenting nifti)
+Example: `python3 segDGM_3DCNN.py -i input_filename.nii.gz -o output_label.nii.gz`
+
+It uses pre-calculated weights in models/weights_optimal.h5
