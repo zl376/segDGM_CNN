@@ -6,6 +6,7 @@ from sklearn.feature_extraction.image import extract_patches as sk_extract_patch
 from matplotlib import pyplot as plt
 import bcolz
 import random
+from skimage import transform
 
 precision_global = 'float32'
 
@@ -194,6 +195,41 @@ def reconstruct_volume(patches, expected_shape, pad_shape=(9, 9, 3)) :
 
     return reconstructed_img
 
+# Image manipulation utils
+def resize_and_crop(img, matrix_size, voxel_size, matrix_size_new, voxel_size_new):
+    method = 'nearest'
+    
+    matrix_size_tmp = tuple( int(matrix_size[i] * voxel_size[i] / voxel_size_new[i]) for i in range(3) )
+    img_tmp = transform.resize(img, matrix_size_tmp, order=0, preserve_range=True, mode='symmetric')
+    
+    pad_L = [ max(int((matrix_size_tmp[i] - matrix_size_new[i])/2),0) for i in range(3) ]
+    pad_R = [ pad_L[i] + min(matrix_size_tmp[i], matrix_size_new[i]) for i in range(3) ]
+    pad_L_new = [ max(int((matrix_size_new[i] - matrix_size_tmp[i])/2),0) for i in range(3) ]
+    pad_R_new = [ pad_L_new[i] + min(matrix_size_tmp[i], matrix_size_new[i]) for i in range(3) ]
+    
+    res = np.zeros(matrix_size_new, dtype=img.dtype)
+    res[pad_L_new[0]:pad_R_new[0], pad_L_new[1]:pad_R_new[1], pad_L_new[2]:pad_R_new[2]] = \
+        img_tmp[pad_L[0]:pad_R[0], pad_L[1]:pad_R[1], pad_L[2]:pad_R[2]]
+    
+    return res
+
+def scale(img, window):
+    val_min, val_max = window
+    
+    res = np.copy(img)
+    res[res < val_min] = val_min
+    res[res > val_max] = val_max
+    
+    res = (res - val_min) / (val_max - val_min)
+    
+    res = (res * 256).astype(int)
+    res[res == 256] = 255
+    
+    return res
+
+
+    
+    
 # Utils for plotting
 def plots(ims, figsize=(12,6), rows=1, scale=None, interp=False, titles=None):
     
