@@ -199,7 +199,7 @@ def reconstruct_volume(patches, expected_shape, pad_shape=(9, 9, 3)) :
 def resize_and_crop(img, matrix_size, voxel_size, matrix_size_new, voxel_size_new):
     method = 'nearest'
     
-    matrix_size_tmp = tuple( int(matrix_size[i] * voxel_size[i] / voxel_size_new[i]) for i in range(3) )
+    matrix_size_tmp = tuple( int(round(matrix_size[i] * voxel_size[i] / voxel_size_new[i])) for i in range(3) )
     img_tmp = transform.resize(img, matrix_size_tmp, order=0, preserve_range=True, mode='symmetric')
     
     pad_L = [ max(int((matrix_size_tmp[i] - matrix_size_new[i])/2),0) for i in range(3) ]
