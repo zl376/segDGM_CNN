@@ -37,7 +37,7 @@ def main(argv):
             filename_in = arg
         elif opt == '-o':
             filename_out = arg
-        elif opt == '-n':
+        elif opt == '-f':
             print('Do not flip in slice direction.')
             flag_flip = False
             
